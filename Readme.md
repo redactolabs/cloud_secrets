@@ -1,5 +1,10 @@
 # Cloud Secrets Manager
 
+[![Build Status](https://github.com/redactolabs/cloud_secrets/workflows/Python%20Package/badge.svg)](https://github.com/redactolabs/cloud_secrets/actions)
+[![Coverage Status](https://codecov.io/gh/redactolabs/cloud_secrets/branch/main/graph/badge.svg)](https://codecov.io/gh/redactolabs/cloud_secrets)
+[![PyPI version](https://badge.fury.io/py/cloud-secrets.svg)](https://badge.fury.io/py/cloud-secrets)
+[![Python Versions](https://img.shields.io/pypi/pyversions/cloud-secrets.svg)](https://pypi.org/project/cloud-secrets/)
+
 A flexible, multi-cloud secret management library that supports seamless secret retrieval across different cloud providers and local environments.
 
 ## Features
@@ -17,7 +22,6 @@ A flexible, multi-cloud secret management library that supports seamless secret 
 
 ```bash
 pip install cloud-secrets
-poetry add cloud-secrets
 ```
 
 ## Quick Start
@@ -39,25 +43,6 @@ debug_mode = local_manager.get_bool("DEBUG")
 # Retrieve an integer secret
 port = local_manager.get_int("PORT")
 ```
-
-## Django-Environ Integration
-
-The library provides a `get_env()` method that returns the underlying `Env` object from django-environ, allowing for advanced configuration and default value setting.
-
-
-```python
-from cloud_secrets import SecretManager
-
-# Initialize the secret manager
-manager = SecretManager(provider_type="local", env_path="/path/to/.env")
-
-# Access the underlying environ.Env object
-env = manager.get_env()
-debug = env('DEBUG')  # Uses the default False if not set
-database_url = env('DATABASE_URL')  # Uses the default URL if not set
-timeout = env.int('TIMEOUT')  # Explicitly cast to int with default
-```
-
 
 ### AWS Secrets Manager
 
@@ -111,6 +96,64 @@ azure_manager = SecretManager(
 azure_secret = azure_manager.get_secret("MY_SECRET")
 ```
 
+## Django-Environ Integration
+
+The library provides a `get_env()` method that returns the underlying `Env` object from django-environ, allowing for advanced configuration and default value setting.
+
+### Advanced Configuration
+
+```python
+from cloud_secrets import SecretManager
+
+# Initialize the secret manager
+manager = SecretManager(provider_type="local", env_path="/path/to/.env")
+
+# Access the underlying environ.Env object
+env = manager.get_env()
+
+# Set default values and type casting
+env.read_env()  # If not already read
+env.setup(
+    DEBUG=(bool, False),
+    DATABASE_URL=(str, 'postgres://localhost/mydatabase'),
+    TIMEOUT=(int, 30)
+)
+
+# Retrieve values with defaults
+debug = env('DEBUG')  # Uses the default False if not set
+database_url = env('DATABASE_URL')  # Uses the default URL if not set
+timeout = env.int('TIMEOUT')  # Explicitly cast to int with default
+```
+
+### Type Casting Examples
+
+```python
+# Various type casting methods
+str_value = env('MY_STRING', default='default')
+bool_value = env.bool('DEBUG', default=False)
+int_value = env.int('PORT', default=8000)
+float_value = env.float('RATE_LIMIT', default=1.5)
+list_value = env.list('ALLOWED_HOSTS', default=['localhost'])
+
+# Complex dictionary parsing
+config = env.dict(
+    'DATABASE_CONFIG', 
+    cast={
+        'host': str, 
+        'port': int, 
+        'enabled': bool
+    }
+)
+```
+
+### Prefix Support
+
+```python
+# Using prefixes for namespaced configurations
+prefixed_env = env.prefixed('MYAPP_')
+database_host = prefixed_env('DATABASE_HOST', default='localhost')
+```
+
 ## Secret Retrieval Methods
 
 The library supports multiple secret retrieval methods:
@@ -160,10 +203,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT
+Apache License 2.0
 
 ## Support
 
-For issues, please file a GitHub issue or contact support.
-
-
+For issues, please file a GitHub issue at https://github.com/redactolabs/cloud_secrets/issues
