@@ -9,7 +9,7 @@ black: ## Check the code base, and fix it
 	autoflake --in-place --remove-all-unused-imports -r ./$(PROJECT)
 	poetry run black ./$(PROJECT)
 
-tests: black
+test: black
 	# Run with coverage
 	poetry run pytest -s
 
