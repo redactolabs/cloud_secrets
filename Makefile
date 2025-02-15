@@ -11,7 +11,7 @@ black: ## Check the code base, and fix it
 
 tests: black
 	# Run with coverage
-	poetry run pytest
+	poetry run pytest -s
 
 install:
 	poetry install

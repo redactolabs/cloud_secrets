@@ -33,6 +33,11 @@ class TestLocalProvider:
         provider = LocalEnvProvider(env_path=env_file)
         assert provider.get_list("ALLOWED_HOSTS") == ["localhost", "127.0.0.1"]
 
+    def test_print(self, env_file):
+        # Use secrets from a local .env file
+        local_manager = SecretManager(provider_type="local", env_path=env_file)
+        local_manager.print_env()
+
     def test_dict_value(self, env_file):
         provider = LocalEnvProvider(env_path=env_file)
         result = provider.get_dict(
