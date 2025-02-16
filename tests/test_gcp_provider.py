@@ -26,5 +26,10 @@ def test_gcp_provider(gcp_credentials):
 
     # Test fetching an existing secret
     test_secret = secret_manager.get_secret("REDACTO_USER_SETTINGS")
+    print(test_secret)
+    secret_manager.print_env()
+    env = secret_manager.get_env()
+    print(env("ENV"))
+    assert env("ENV") is not None
     assert test_secret is not None
     assert isinstance(test_secret, str)

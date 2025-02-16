@@ -41,7 +41,7 @@ class GCPSecretsProvider(BaseSecretProvider):
             print(f"Secret Manager trying to read {name}")
             response = self.client.access_secret_version(request={"name": name})
             value = response.payload.data.decode("UTF-8")
-            print(f"Secret Manager trying to read {secret_name}={value}")
+            print(f"Secret Manager trying to read {secret_name}")
 
             # Track that we've fetched this secret
             self._fetched_secrets.add(secret_name)
