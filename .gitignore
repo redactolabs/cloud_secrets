@@ -48,3 +48,4 @@ venv.bak/
 # Testing
 .coverage
 .coverage.
+tests/staging.json

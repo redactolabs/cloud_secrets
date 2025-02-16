@@ -18,9 +18,8 @@ class LocalEnvProvider(BaseSecretProvider):
             raise ConfigurationError(f"Failed to initialize local provider: {str(e)}")
 
     def _fetch_raw_secret(self, secret_name: str) -> str:
-        """Get raw secret from environment file."""
+        """Get raw secret value from the already loaded environment."""
         try:
-            with open(self.env_path, "r") as f:
-                return f.read()
+            return self.env(secret_name)
         except Exception as e:
-            raise CloudSecretsError(f"Error reading environment file: {str(e)}")
+            raise CloudSecretsError(f"Error reading secret {secret_name}: {str(e)}")

@@ -33,8 +33,11 @@ class BaseSecretProvider(ABC):
     ) -> Any:
         """Get secret with environ casting support."""
         try:
+            # First fetch the raw secret to populate the environment
+            self._fetch_raw_secret(secret_name)
+
+            # Then get it from the environment with proper casting
             if cast_type == "dict" and dict_fields:
-                # Need to wrap the value type and cast configuration
                 return self.env(secret_name, dict(value=str, cast=dict_fields))
             return getattr(self.env, cast_type)(secret_name, **kwargs)
         except Exception as e:

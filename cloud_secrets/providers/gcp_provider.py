@@ -35,10 +35,13 @@ class GCPSecretsProvider(BaseSecretProvider):
 
     def _fetch_raw_secret(self, secret_name: str) -> str:
         """Fetch raw secret from Google Cloud Secret Manager."""
+        name = None
         try:
             name = f"projects/{self.project_id}/secrets/{secret_name}/versions/latest"
+            print(f"Secret Manager trying to read {name}")
             response = self.client.access_secret_version(request={"name": name})
             value = response.payload.data.decode("UTF-8")
+            print(f"Secret Manager trying to read {secret_name}={value}")
 
             # Track that we've fetched this secret
             self._fetched_secrets.add(secret_name)
@@ -61,4 +64,5 @@ class GCPSecretsProvider(BaseSecretProvider):
         except exceptions.NotFound:
             raise SecretNotFoundError(f"Secret {secret_name} not found")
         except Exception as e:
+            print(f"Exception {e}")
             raise ConfigurationError(f"Error retrieving secret: {str(e)}")
