@@ -34,7 +34,6 @@ class GCPSecretsProvider(BaseSecretProvider):
             print(f"Secret Manager trying to read {name}")
             response = self.client.access_secret_version(request={"name": name})
             value = response.payload.data.decode("UTF-8")
-            print(f"Secret Manager trying to read {secret_name}")
 
             # Track that we've fetched this secret
             self._fetched_secrets.add(secret_name)
@@ -43,13 +42,19 @@ class GCPSecretsProvider(BaseSecretProvider):
             current_env = {k: v for k, v in self.env.ENVIRON.items()}
             current_env[secret_name] = value
 
-            # Build env string with proper formatting for each value
-            env_lines = []
-            for k, v in current_env.items():
-                env_lines.append(f"{k}={v}")
+            self.env.read_env(io.StringIO(value), overwrite=True)
+            self.env.ENVIRON[secret_name] = value
 
-            env_string = "\n".join(env_lines)
-            self.env.read_env(io.StringIO(env_string))
+            # Build env string with proper formatting for each value
+            # env_lines = []
+            # i = 1
+            # for k, v in current_env.items():
+            #     print(f"{i} testing ... {k}={v}")
+            #     i += 1
+            #     env_lines.append(f"{k}={v}")
+            #
+            # env_string = "\n".join(env_lines)
+            # self.env.read_env(io.StringIO(env_string))
 
             return value
 
