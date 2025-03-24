@@ -8,7 +8,7 @@ packages = [{include = "cloud_secrets"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-boto3 = "^1.36.20"
+boto3 = "^1.37.18"
 google-cloud-secret-manager = "^2.19.0"
 azure-keyvault-secrets = "^4.9.0"
 setuptools = ">70.0"
