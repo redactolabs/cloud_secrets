@@ -1,31 +1,20 @@
-name: 'Dependabot vulerabilities notification to Slack'
+name: 'Dependabot vulnerabilities notification to Slack'
 
 on:
-
   schedule:
-
-    - cron: '0 10 * * 1' # Cron 
+    - cron: '0 10 * * 1' # Cron runs every Monday at 10:00 AM UTC
 
   # Allows you to run this workflow manually from the Actions tab
-
   workflow_dispatch:
 
 jobs:
-
-  Notify-Vulnerabilites:
-
+  Notify-Vulnerabilities:
     runs-on: ubuntu-latest
 
     steps:
-
       # Latest version available at: https://github.com/kunalnagarco/action-cve/releases
-
       - name: Notify Vulnerabilities
-
         uses: kunalnagarco/action-cve@v1.14.6
-
         with:
-
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }} # This secret need to be created
-
-          slack_webhook: ${{ secrets.SLACK_WEBHOOK }} # This secret need to be created
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }} # This secret needs to be created
+          slack_webhook: ${{ secrets.SLACK_WEBHOOK }} # This secret needs to be created
