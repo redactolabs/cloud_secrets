@@ -34,3 +34,23 @@ clean:
 	find . -type d -name "*.egg" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
+
+	@awk -F '##' '/^[a-z_]+:[a-z ]+##/ { print "\033[34m"$$1"\033[0m" "\n" $$2 }' Makefile
+
+update-packages: ## Update the packages
+	poetry update
+	poetry show --outdated | \
+		grep -v 'platform' | \
+		grep -v -E 'django|another-package|third-package' | \
+		tail -n +3 | \
+		tr -s ' ' | \
+		cut -d ' ' -f 1 | \
+		while read package; do \
+			poetry add "$$package@latest" || echo "Failed to update $$package, continuing..."; \
+		done
+
+show-outdated:
+	poetry show --outdated
+
+publish:
+	poetry publish --build
