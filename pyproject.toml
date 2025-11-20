@@ -31,7 +31,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --cov=cloud_secrets"
+addopts = "-ra"
 testpaths = ["tests"]
 pythonpath = ["."]
 

@@ -10,14 +10,13 @@ black: ## Check the code base, and fix it
 	poetry run black ./$(PROJECT)
 
 test: black
-	# Run with coverage
 	poetry run pytest -s
 
 install:
 	poetry install
 
 test-cov:
-	poetry run pytest --cov=cloud_secrets --cov-report=term-missing
+	poetry run pytest -s --cov=cloud_secrets --cov-report=term-missing
 
 lint:
 	poetry run flake8 .
