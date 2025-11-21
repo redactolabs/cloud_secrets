@@ -46,7 +46,5 @@ class SecretManager:
 
     def print_env(self):
         env: Env = self.get_env()
-        # dump all the env variables
-        print(f"Let's print all env")
         for key, val in env.ENVIRON.items():
-            print(f"⚙️ {key} == {val}")
+            print(key, "=", val)

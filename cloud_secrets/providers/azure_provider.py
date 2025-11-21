@@ -2,13 +2,15 @@
 import io
 
 from azure.core.exceptions import ResourceNotFoundError
-from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
-from .base import BaseSecretProvider
+from azure.keyvault.secrets import SecretClient
+
 from cloud_secrets.common.exceptions import (
-    SecretNotFoundError,
     ConfigurationError,
+    SecretNotFoundError,
 )
+
+from .base import BaseSecretProvider
 
 
 class AzureSecretsProvider(BaseSecretProvider):
@@ -26,12 +28,21 @@ class AzureSecretsProvider(BaseSecretProvider):
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize Azure Key Vault: {str(e)}")
 
-    def _fetch_raw_secret(self, secret_name: str) -> str:
-        """Fetch raw secret from Azure Key Vault."""
+    def _load_secret(self, secret_name: str, is_env: bool = True, **kwargs) -> str:
+        """Load secret from Azure Key Vault and populate environment.
+
+        Args:
+            secret_name: Name of the secret to load
+            is_env: If True, parse secret as .env file format; if False, treat as raw value
+        """
         try:
             response = self.client.get_secret(secret_name)
-            # Create an env file format that environ can parse
-            self.env.read_env(io.StringIO(f"{secret_name}={response.value}"))
+
+            if is_env:
+                self.env.read_env(io.StringIO(response.value))
+            else:
+                self.env.ENVIRON[secret_name] = response.value
+
             return response.value
         except ResourceNotFoundError:
             raise SecretNotFoundError(f"Secret {secret_name} not found")

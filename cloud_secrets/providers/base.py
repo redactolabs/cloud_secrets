@@ -1,9 +1,9 @@
 """Base provider implementation."""
 
-import environ
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Mapping
+from typing import Any, Dict, List, Mapping, Optional
 
+import environ
 from environ import Env
 
 from cloud_secrets.common.exceptions import SecretNotFoundError
@@ -13,13 +13,22 @@ class BaseSecretProvider(ABC):
     """Base class for secret providers with environ support."""
 
     def __init__(self, env_path: Optional[str] = None, **kwargs):
-        """Initialize the base provider with environ."""
+        """Initialize the base provider with environ.
+
+        Args:
+            env_path: Optional path to .env file
+        """
         self.env = environ.Env()
         self.env_path = env_path
 
     @abstractmethod
-    def _fetch_raw_secret(self, secret_name: str) -> str:
-        """Fetch raw secret value from provider."""
+    def _load_secret(self, secret_name: str, **kwargs) -> str:
+        """Load secret from provider and populate environment.
+
+        Args:
+            secret_name: Name of the secret to load
+            **kwargs: Provider-specific parameters
+        """
 
     def get_env(self) -> Env:
         return self.env
@@ -31,15 +40,26 @@ class BaseSecretProvider(ABC):
         dict_fields: Optional[Mapping[str, Any]] = None,
         **kwargs,
     ) -> Any:
-        """Get secret with environ casting support."""
-        try:
-            # First fetch the raw secret to populate the environment
-            self._fetch_raw_secret(secret_name)
+        """Get secret with environ casting support.
 
-            # Then get it from the environment with proper casting
+        Args:
+            secret_name: Name of the secret to retrieve
+            cast_type: Type to cast the secret to ('str', 'bool', 'int', 'float', 'list', 'dict')
+            dict_fields: Field types for dict casting
+            **kwargs: Provider-specific parameters (e.g., is_env, is_json)
+        """
+        try:
+            is_env = kwargs.get("is_env", True)
+
+            secret_data = self._load_secret(secret_name, **kwargs)
+
+            if is_env and self.__class__.__name__ != "LocalEnvProvider":
+                return secret_data
+
             if cast_type == "dict" and dict_fields:
                 return self.env(secret_name, dict(value=str, cast=dict_fields))
-            return getattr(self.env, cast_type)(secret_name, **kwargs)
+
+            return getattr(self.env, cast_type)(secret_name)
         except Exception as e:
             raise SecretNotFoundError(
                 f"Error retrieving secret {secret_name}: {str(e)}"

@@ -1,6 +1,8 @@
 import os
+
+from cloud_secrets.common.exceptions import CloudSecretsError, ConfigurationError
+
 from .base import BaseSecretProvider
-from cloud_secrets.common.exceptions import ConfigurationError, CloudSecretsError
 
 
 class LocalEnvProvider(BaseSecretProvider):
@@ -17,8 +19,12 @@ class LocalEnvProvider(BaseSecretProvider):
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize local provider: {str(e)}")
 
-    def _fetch_raw_secret(self, secret_name: str) -> str:
-        """Get raw secret value from the already loaded environment."""
+    def _load_secret(self, secret_name: str, **kwargs) -> str:
+        """Get secret value from the already loaded environment.
+
+        Args:
+            secret_name: Name of the secret to load
+        """
         try:
             return self.env(secret_name)
         except Exception as e:
