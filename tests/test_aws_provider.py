@@ -33,7 +33,7 @@ def test_aws_provider_env_json(aws_credentials):
         provider_type="aws",
         region_name=region,
     )
-    secret_manager.get_secret(secret_name, is_env=True)
+    secret_manager.get_secret(secret_name)
     env = secret_manager.get_env()
 
     dummy_value = env("DUMMY")

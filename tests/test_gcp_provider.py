@@ -38,7 +38,7 @@ def test_gcp_provider_env_file_secret(gcp_credentials):
         provider_type="gcp",
         project_id=project_id,
     )
-    secret_manager.get_secret(secret_name, is_env=True)
+    secret_manager.get_secret(secret_name)
 
     env = secret_manager.get_env()
 

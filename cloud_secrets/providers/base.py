@@ -49,11 +49,11 @@ class BaseSecretProvider(ABC):
             **kwargs: Provider-specific parameters (e.g., is_env, is_json)
         """
         try:
-            is_env = kwargs.get("is_env", False)
+            is_env = kwargs.get("is_env", True)
 
             secret_data = self._load_secret(secret_name, **kwargs)
 
-            if is_env:
+            if is_env and self.__class__.__name__ != "LocalEnvProvider":
                 return secret_data
 
             if cast_type == "dict" and dict_fields:
