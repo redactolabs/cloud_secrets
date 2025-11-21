@@ -28,8 +28,13 @@ class AWSSecretsProvider(BaseSecretProvider):
                 f"Failed to initialize AWS Secrets Manager: {str(e)}"
             )
 
-    def _fetch_raw_secret(self, secret_name: str) -> str:
-        """Fetch raw secret from AWS Secrets Manager."""
+    def _load_secret(self, secret_name: str, is_env: bool = True, **kwargs) -> str:
+        """Load secret from AWS Secrets Manager and populate environment.
+
+        Args:
+            secret_name: Name of the secret to load
+            is_json: If True, parse secret as JSON; if False, treat as raw value
+        """
         try:
             response = self.client.get_secret_value(SecretId=secret_name)
 
@@ -37,20 +42,20 @@ class AWSSecretsProvider(BaseSecretProvider):
                 raise SecretNotFoundError(f"Secret {secret_name} not found")
 
             secret = response["SecretString"]
-            try:
-                secret_data = json.loads(secret)
-                if isinstance(secret_data, dict):
-                    content = "\n".join(
-                        [f"{key}={val}" for key, val in secret_data.items()]
-                    )
-                    self.env.read_env(io.StringIO(f"{secret_name}={content}"))
-                    return content
-                else:
-                    self.env.read_env(io.StringIO(f"{secret_name}={secret}"))
+
+            if is_env:
+                data = json.loads(secret)
+
+                if isinstance(data, dict):
+                    env = "\n".join([f"{key}={val}" for key, val in data.items()])
+                    self.env.read_env(io.StringIO(env))
                     return secret
-            except json.JSONDecodeError:
+
                 self.env.read_env(io.StringIO(f"{secret_name}={secret}"))
                 return secret
+
+            self.env.read_env(io.StringIO(f"{secret_name}={secret}"))
+            return secret
         except ClientError as e:
             if e.response["Error"]["Code"] == "ResourceNotFoundException":
                 raise SecretNotFoundError(f"Secret {secret_name} not found")
