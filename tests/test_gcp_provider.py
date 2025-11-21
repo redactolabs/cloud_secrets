@@ -78,3 +78,46 @@ def test_gcp_provider_raw_secret(gcp_credentials):
     assert (
         raw_secret == "test_raw_string_value"
     ), "Raw secret should match the expected test value"
+
+
+def test_gcp_provider_env_override_system_envs(gcp_credentials):
+    """Test retrieving a secret with RabbitMQ environment variables injected."""
+    project_id = os.environ.get("GCP_PROJECT_ID")
+    secret_name = os.environ.get("GCP_SECRET_NAME")
+
+    if not secret_name:
+        pytest.skip("GCP_SECRET_NAME environment variable not set")
+
+    system_envs = {
+        "RABBITMQ_PORT_5672_TCP_ADDR": "10.10.10.10",
+        "RABBITMQ_PORT_15672_TCP_ADDR": "10.10.10.10",
+        "RABBITMQ_PORT_5672_TCP_PORT": "5672",
+        "RABBITMQ_SERVICE_PORT_AMQP": "5672",
+        "RABBITMQ_PORT_5672_TCP_PROTO": "tcp",
+        "RABBITMQ_SERVICE_PORT": "5672",
+        "RABBITMQ_SERVICE_HOST": "10.10.10.10",
+        "RABBITMQ_PORT": "tcp://10.10.10.10:5672",
+        "RABBITMQ_SERVICE_PORT_MGMT": "15672",
+        "RABBITMQ_PORT_15672_TCP_PROTO": "tcp",
+        "RABBITMQ_PORT_5672_TCP": "tcp://10.10.10.10:5672",
+        "RABBITMQ_PORT_15672_TCP_PORT": "15672",
+        "RABBITMQ_PORT_15672_TCP": "tcp://10.10.10.10:15672",
+    }
+
+    os.environ.update(system_envs)
+    secret_manager = SecretManager(
+        provider_type="gcp",
+        project_id=project_id,
+    )
+    secret_manager.get_secret(secret_name)
+    env = secret_manager.get_env()
+
+    rabbitmq_port = env("RABBITMQ_PORT")
+    assert (
+        rabbitmq_port == "5672"
+    ), f"RABBITMQ_PORT should be '5672', got '{rabbitmq_port}'"
+
+    rabbitmq_port_15672_tcp = env("RABBITMQ_PORT_15672_TCP")
+    assert (
+        rabbitmq_port_15672_tcp == "tcp://10.10.10.10:15672"
+    ), f"RABBITMQ_PORT_15672_TCP should be 'tcp://10.10.10.10:15672', got '{rabbitmq_port_15672_tcp}'"
