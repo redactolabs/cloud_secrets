@@ -2,11 +2,11 @@
 export PROJECT=.
 
 black-check: ## Check the code base
-	autoflake -cd --remove-all-unused-imports -r --quiet ./$(PROJECT)
+	poetry run autoflake -cd --remove-all-unused-imports -r --quiet ./$(PROJECT)
 	poetry run black ./$(PROJECT) --check --diff
 
 black: ## Check the code base, and fix it
-	autoflake --in-place --remove-all-unused-imports -r ./$(PROJECT)
+	poetry run autoflake --in-place --remove-all-unused-imports -r ./$(PROJECT)
 	poetry run black ./$(PROJECT)
 
 test: black

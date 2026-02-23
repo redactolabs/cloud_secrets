@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "cloud_secrets"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.13,<3.14"
 boto3 = "^1.36.20"
 google-cloud-secret-manager = "^2.19.0"
 azure-keyvault-secrets = "^4.9.0"
@@ -24,6 +24,7 @@ isort = "^6.0.0"
 flake8 = "^7.1.1"
 mypy = "^1.15.0"
 codecov = "^2.1.13"
+autoflake = "^2.3.3"
 
 [build-system]
 requires = ["poetry-core"]
@@ -37,7 +38,7 @@ pythonpath = ["."]
 
 [tool.black]
 line-length = 88
-target-version = ['py312']
+target-version = ['py313']
 include = '\.pyi?$'
 
 [tool.isort]
