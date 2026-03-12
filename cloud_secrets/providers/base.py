@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Mapping
 
 from environ import Env
 
-from cloud_secrets.common.exceptions import SecretNotFoundError
+from cloud_secrets.common.exceptions import CloudSecretsError, SecretNotFoundError
 
 
 class BaseSecretProvider(ABC):
@@ -20,6 +20,22 @@ class BaseSecretProvider(ABC):
     @abstractmethod
     def _fetch_raw_secret(self, secret_name: str) -> str:
         """Fetch raw secret value from provider."""
+
+    @abstractmethod
+    def _store_raw_secret(self, secret_name: str, secret_value: str) -> None:
+        """Store or update a secret value in the provider backend."""
+
+    @abstractmethod
+    def _delete_raw_secret(self, secret_name: str) -> None:
+        """Delete a secret from the provider backend. No-op if not found."""
+
+    def set_secret(self, secret_name: str, secret_value: str) -> None:
+        """Create or update a secret."""
+        self._store_raw_secret(secret_name, secret_value)
+
+    def delete_secret(self, secret_name: str) -> None:
+        """Delete a secret. No-op if it doesn't exist."""
+        self._delete_raw_secret(secret_name)
 
     def get_env(self) -> Env:
         return self.env
@@ -40,6 +56,8 @@ class BaseSecretProvider(ABC):
             if cast_type == "dict" and dict_fields:
                 return self.env(secret_name, dict(value=str, cast=dict_fields))
             return getattr(self.env, cast_type)(secret_name, **kwargs)
+        except CloudSecretsError:
+            raise
         except Exception as e:
             raise SecretNotFoundError(
                 f"Error retrieving secret {secret_name}: {str(e)}"

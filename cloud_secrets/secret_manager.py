@@ -41,6 +41,14 @@ class SecretManager:
         """Get a secret by name."""
         return self.provider.get_secret(secret_name, **kwargs)
 
+    def set_secret(self, secret_name: str, secret_value: str) -> None:
+        """Create or update a secret."""
+        self.provider.set_secret(secret_name, secret_value)
+
+    def delete_secret(self, secret_name: str) -> None:
+        """Delete a secret. No-op if it doesn't exist."""
+        self.provider.delete_secret(secret_name)
+
     def get_env(self) -> Env:
         return self.provider.get_env()
 

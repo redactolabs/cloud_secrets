@@ -37,3 +37,17 @@ class AzureSecretsProvider(BaseSecretProvider):
             raise SecretNotFoundError(f"Secret {secret_name} not found")
         except Exception as e:
             raise ConfigurationError(f"Error retrieving secret: {str(e)}")
+
+    def _store_raw_secret(self, secret_name: str, secret_value: str) -> None:
+        try:
+            self.client.set_secret(secret_name, secret_value)
+        except Exception as e:
+            raise ConfigurationError(f"Failed to store secret '{secret_name}': {e}")
+
+    def _delete_raw_secret(self, secret_name: str) -> None:
+        try:
+            self.client.begin_delete_secret(secret_name)
+        except ResourceNotFoundError:
+            pass
+        except Exception as e:
+            raise ConfigurationError(f"Failed to delete secret '{secret_name}': {e}")
