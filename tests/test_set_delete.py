@@ -121,15 +121,20 @@ class TestAWSSetDelete:
         mock_aws_client.get_secret_value.return_value = {"SecretString": original}
 
         provider = AWSSecretsProvider(region_name="us-east-1")
-        result = provider._fetch_raw_secret("my-bundle")
+        try:
+            result = provider._fetch_raw_secret("my-bundle")
 
-        # Raw JSON is returned
-        assert result == original
-        # Individual keys were destructured into env
-        assert os.environ.get("DB_HOST") == "localhost"
-        assert os.environ.get("DB_PORT") == "5432"
-        # The bundle name also maps to the raw JSON
-        assert os.environ.get("my-bundle") == original
+            # Raw JSON is returned
+            assert result == original
+            # Individual keys were destructured into env
+            assert os.environ.get("DB_HOST") == "localhost"
+            assert os.environ.get("DB_PORT") == "5432"
+            # The bundle name also maps to the raw JSON
+            assert os.environ.get("my-bundle") == original
+        finally:
+            os.environ.pop("DB_HOST", None)
+            os.environ.pop("DB_PORT", None)
+            os.environ.pop("my-bundle", None)
 
     def test_store_secret_create_failure(self, mock_aws_client):
         """create_secret ClientError is wrapped in ConfigurationError."""
@@ -138,8 +143,12 @@ class TestAWSSetDelete:
         mock_aws_client.put_secret_value.side_effect = not_found_exc
         mock_aws_client.exceptions.ResourceNotFoundException = type(not_found_exc)
 
-        create_error_resp = {"Error": {"Code": "AccessDeniedException", "Message": "denied"}}
-        mock_aws_client.create_secret.side_effect = ClientError(create_error_resp, "CreateSecret")
+        create_error_resp = {
+            "Error": {"Code": "AccessDeniedException", "Message": "denied"}
+        }
+        mock_aws_client.create_secret.side_effect = ClientError(
+            create_error_resp, "CreateSecret"
+        )
 
         provider = AWSSecretsProvider(region_name="us-east-1")
         with pytest.raises(ConfigurationError, match="Failed to store secret"):
@@ -188,7 +197,9 @@ class TestGCPSetDelete:
         """Another process created the secret between get and create."""
         client_instance = mock_gcp_client.return_value
         client_instance.get_secret.side_effect = gcp_exceptions.NotFound("not found")
-        client_instance.create_secret.side_effect = gcp_exceptions.AlreadyExists("exists")
+        client_instance.create_secret.side_effect = gcp_exceptions.AlreadyExists(
+            "exists"
+        )
 
         provider = GCPSecretsProvider(project_id="test-project")
         provider._store_raw_secret("race-secret", "race-value")
@@ -220,12 +231,8 @@ class TestAzureSetDelete:
     @pytest.fixture
     def azure_provider(self):
         with (
-            patch(
-                "cloud_secrets.providers.azure_provider.DefaultAzureCredential"
-            ),
-            patch(
-                "cloud_secrets.providers.azure_provider.SecretClient"
-            ) as mock_cls,
+            patch("cloud_secrets.providers.azure_provider.DefaultAzureCredential"),
+            patch("cloud_secrets.providers.azure_provider.SecretClient") as mock_cls,
         ):
             client = MagicMock()
             mock_cls.return_value = client

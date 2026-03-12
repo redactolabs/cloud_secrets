@@ -36,6 +36,7 @@ class BaseSecretProvider(ABC):
     def delete_secret(self, secret_name: str) -> None:
         """Delete a secret. No-op if it doesn't exist."""
         self._delete_raw_secret(secret_name)
+        self.env.ENVIRON.pop(secret_name, None)
 
     def get_env(self) -> Env:
         return self.env

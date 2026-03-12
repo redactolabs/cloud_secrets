@@ -62,6 +62,10 @@ class GCPSecretsProvider(BaseSecretProvider):
                 )
             except exceptions.AlreadyExists:
                 pass  # Another process created it; proceed to add_secret_version
+            except Exception as e:
+                raise ConfigurationError(
+                    f"Failed to create secret '{secret_name}': {e}"
+                )
         except Exception as e:
             raise ConfigurationError(f"Failed to store secret '{secret_name}': {e}")
         try:

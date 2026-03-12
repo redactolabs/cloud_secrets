@@ -58,7 +58,9 @@ class AWSSecretsProvider(BaseSecretProvider):
 
     def _store_raw_secret(self, secret_name: str, secret_value: str) -> None:
         try:
-            self.client.put_secret_value(SecretId=secret_name, SecretString=secret_value)
+            self.client.put_secret_value(
+                SecretId=secret_name, SecretString=secret_value
+            )
         except self.client.exceptions.ResourceNotFoundException:
             try:
                 self.client.create_secret(Name=secret_name, SecretString=secret_value)
