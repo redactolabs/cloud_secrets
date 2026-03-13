@@ -49,3 +49,4 @@ venv.bak/
 .coverage
 .coverage.
 tests/staging.json
+.secrets.json
