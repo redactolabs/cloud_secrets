@@ -30,8 +30,8 @@ class AzureSecretsProvider(BaseSecretProvider):
         """Fetch raw secret from Azure Key Vault."""
         try:
             response = self.client.get_secret(secret_name)
-            # Create an env file format that environ can parse
-            self.env.read_env(io.StringIO(f"{secret_name}={response.value}"))
+            self.env.read_env(io.StringIO(response.value), overwrite=True)
+            self.env.ENVIRON[secret_name] = response.value
             return response.value
         except ResourceNotFoundError:
             raise SecretNotFoundError(f"Secret {secret_name} not found")
