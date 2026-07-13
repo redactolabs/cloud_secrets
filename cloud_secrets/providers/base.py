@@ -12,7 +12,7 @@ from cloud_secrets.common.exceptions import CloudSecretsError, SecretNotFoundErr
 class BaseSecretProvider(ABC):
     """Base class for secret providers with environ support."""
 
-    _INVALID_NAME_CHARS: Optional[Pattern] = None
+    _INVALID_NAME_CHARS: Pattern | None = None
 
     def __init__(self, env_path: Optional[str] = None, **kwargs):
         """Initialize the base provider with environ."""

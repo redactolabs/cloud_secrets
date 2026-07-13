@@ -16,7 +16,9 @@ _DOTENV_LINE = re.compile(r"\A(?:#|(?:export )?[A-Za-z_0-9]+=)")
 
 
 def _is_dotenv_blob(text: str) -> bool:
-    """Whether text is a multi-line dotenv config blob rather than a scalar secret."""
+    """Require >=2 assignment lines so a single-line scalar that happens to contain
+    '=' (a connection string, a SAS token) is returned as-is rather than split into
+    the environment under bogus keys."""
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines or not all(_DOTENV_LINE.match(line) for line in lines):
         return False
