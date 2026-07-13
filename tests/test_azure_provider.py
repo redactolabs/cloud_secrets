@@ -10,7 +10,7 @@ from cloud_secrets.providers.azure_provider import (
     _is_dotenv_blob,
 )
 from cloud_secrets.providers.aws_provider import AWSSecretsProvider
-from cloud_secrets.common.exceptions import SecretNotFoundError
+from cloud_secrets.common.exceptions import CloudSecretsError, SecretNotFoundError
 
 
 @pytest.fixture
@@ -99,6 +99,24 @@ class TestAzureNameNormalization:
         provider, _ = azure_provider
         name = "csv-connector-0f1e2d3c-4b5a-6978-8899-aabbccddeeff"
         assert provider._canonical_name(name) == name
+
+    def test_other_invalid_chars_raise(self, azure_provider):
+        provider, client = azure_provider
+        for name in ["a/b", "a.b", "a b", "a@b"]:
+            with pytest.raises(CloudSecretsError):
+                provider._canonical_name(name)
+
+    def test_set_get_delete_reject_invalid_name(self, azure_provider):
+        provider, client = azure_provider
+        with pytest.raises(CloudSecretsError):
+            provider.set_secret("a/b", "v")
+        with pytest.raises(CloudSecretsError):
+            provider.get_secret("a/b")
+        with pytest.raises(CloudSecretsError):
+            provider.delete_secret("a/b")
+        client.set_secret.assert_not_called()
+        client.get_secret.assert_not_called()
+        client.begin_delete_secret.assert_not_called()
 
     def test_set_get_delete_resolve_to_dashed_key(self, azure_provider):
         provider, client = azure_provider

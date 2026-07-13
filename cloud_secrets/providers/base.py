@@ -22,7 +22,12 @@ class BaseSecretProvider(ABC):
     def _canonical_name(self, secret_name: str) -> str:
         if self._INVALID_NAME_CHARS is None:
             return secret_name
-        return self._INVALID_NAME_CHARS.sub("-", secret_name)
+        normalized = secret_name.replace("_", "-")
+        if self._INVALID_NAME_CHARS.search(normalized):
+            raise CloudSecretsError(
+                f"Secret name '{secret_name}' has characters invalid for this provider"
+            )
+        return normalized
 
     @abstractmethod
     def _fetch_raw_secret(self, secret_name: str) -> str:
