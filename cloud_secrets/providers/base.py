@@ -2,7 +2,7 @@
 
 import environ
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Mapping
+from typing import Any, Dict, List, Optional, Mapping, Pattern
 
 from environ import Env
 
@@ -12,10 +12,17 @@ from cloud_secrets.common.exceptions import CloudSecretsError, SecretNotFoundErr
 class BaseSecretProvider(ABC):
     """Base class for secret providers with environ support."""
 
+    _INVALID_NAME_CHARS: Optional[Pattern] = None
+
     def __init__(self, env_path: Optional[str] = None, **kwargs):
         """Initialize the base provider with environ."""
         self.env = environ.Env()
         self.env_path = env_path
+
+    def _canonical_name(self, secret_name: str) -> str:
+        if self._INVALID_NAME_CHARS is None:
+            return secret_name
+        return self._INVALID_NAME_CHARS.sub("-", secret_name)
 
     @abstractmethod
     def _fetch_raw_secret(self, secret_name: str) -> str:
@@ -31,10 +38,12 @@ class BaseSecretProvider(ABC):
 
     def set_secret(self, secret_name: str, secret_value: str) -> None:
         """Create or update a secret."""
+        secret_name = self._canonical_name(secret_name)
         self._store_raw_secret(secret_name, secret_value)
 
     def delete_secret(self, secret_name: str) -> None:
         """Delete a secret. No-op if it doesn't exist."""
+        secret_name = self._canonical_name(secret_name)
         self._delete_raw_secret(secret_name)
         self.env.ENVIRON.pop(secret_name, None)
 
@@ -49,6 +58,7 @@ class BaseSecretProvider(ABC):
         **kwargs,
     ) -> Any:
         """Get secret with environ casting support."""
+        secret_name = self._canonical_name(secret_name)
         try:
             # First fetch the raw secret to populate the environment
             self._fetch_raw_secret(secret_name)
