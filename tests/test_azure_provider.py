@@ -1,5 +1,7 @@
 import json
+import os
 
+import environ
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -18,6 +20,7 @@ def azure_provider():
     with (
         patch("cloud_secrets.providers.azure_provider.DefaultAzureCredential"),
         patch("cloud_secrets.providers.azure_provider.SecretClient") as mock_cls,
+        patch.object(environ.Env, "ENVIRON", {}),
     ):
         client = MagicMock()
         mock_cls.return_value = client
@@ -64,6 +67,15 @@ class TestAzureReadBack:
 
         assert result == conn
         assert "AccountName" not in provider.get_env().ENVIRON
+
+    def test_get_secret_does_not_pollute_os_environ(self, azure_provider):
+        provider, client = azure_provider
+        _stored(client, "APP_NAME=MyApp\nPORT=8080\n")
+
+        provider.get_secret("app-config")
+
+        assert "APP_NAME" not in os.environ
+        assert "app-config" not in os.environ
 
     def test_get_secret_missing_raises_not_found(self, azure_provider):
         provider, client = azure_provider
