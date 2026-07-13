@@ -12,15 +12,25 @@ from cloud_secrets.common.exceptions import (
 )
 
 
-# Matches a dotenv line: a comment, or `KEY=` (optionally `export KEY=`).
-_DOTENV_LINE = re.compile(r"^\s*(?:#|(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=)")
+# Must mirror django-environ's read_env acceptance EXACTLY: `#` only at column 0,
+# and a strict `KEY=` / `export KEY=` with no surrounding whitespace. read_env
+# logs every line it rejects verbatim at WARNING ("Invalid line: %s"), so any
+# line that passes a looser gate than this but read_env then rejects would leak
+# the secret in plaintext. Keep this a strict prefix of read_env's own regex.
+_DOTENV_LINE = re.compile(r"\A(?:#|(?:export )?[A-Za-z_0-9]+=)")
 
 
 def _is_dotenv_blob(text: str) -> bool:
-    """Whether text is a dotenv config blob (every non-blank line is KEY=VALUE),
-    as opposed to a JSON or scalar secret value."""
+    """Whether text is a MULTI-KEY dotenv config blob — every non-blank line is a
+    comment or KEY=VALUE, and there is more than one assignment. A single
+    `KEY=value` line (e.g. `PASSWORD=abc`) is a scalar secret, not a blob: it
+    stays verbatim under the Key Vault secret name instead of being split into
+    an env key. JSON and other scalar values fail the per-line match."""
     lines = [line for line in text.splitlines() if line.strip()]
-    return bool(lines) and all(_DOTENV_LINE.match(line) for line in lines)
+    if not lines or not all(_DOTENV_LINE.match(line) for line in lines):
+        return False
+    assignments = [line for line in lines if not line.lstrip().startswith("#")]
+    return len(assignments) > 1
 
 
 class AzureSecretsProvider(BaseSecretProvider):
@@ -43,10 +53,10 @@ class AzureSecretsProvider(BaseSecretProvider):
         try:
             response = self.client.get_secret(secret_name)
             value = response.value or ""
-            # get_secret() reads the value back by name; store it verbatim because
-            # Key Vault names contain dashes, which read_env cannot use as a key.
+            # Store verbatim so BaseSecretProvider.get_secret() reads it back by
+            # name: Key Vault names contain dashes, which read_env can't use as a
+            # dotenv key, so the value can't round-trip through read_env.
             self.env.ENVIRON[secret_name] = value
-            # Config blobs are dotenv; parse them so get_env() exposes each key.
             if _is_dotenv_blob(value):
                 self.env.read_env(io.StringIO(value))
             return value

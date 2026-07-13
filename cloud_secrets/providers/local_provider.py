@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 from pathlib import Path
 
 from .base import BaseSecretProvider
 from cloud_secrets.common.exceptions import ConfigurationError, SecretNotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 class LocalEnvProvider(BaseSecretProvider):
@@ -13,16 +16,21 @@ class LocalEnvProvider(BaseSecretProvider):
         """Initialize local environment provider."""
         super().__init__()
         self.env_path = kwargs.get("env_path", ".env")
-        # Read the env file when present; otherwise fall back to the process
-        # environment (populated via envFrom). One mode serves a mounted file
-        # or plain env vars.
+        # Fall back to the process environment (populated via envFrom) when no
+        # env file is mounted.
         if os.path.exists(self.env_path):
             try:
                 self.env.read_env(self.env_path)
+                logger.info("local provider: loaded env file %s", self.env_path)
             except Exception as e:
                 raise ConfigurationError(
                     f"Failed to initialize local provider: {str(e)}"
                 )
+        else:
+            logger.info(
+                "local provider: no env file at %s; using process environment",
+                self.env_path,
+            )
 
     def _get_secrets_file_path(self) -> Path:
         return Path(self.env_path).parent / ".secrets.json"
