@@ -9,6 +9,7 @@ from cloud_secrets.providers.aws_provider import AWSSecretsProvider
 from cloud_secrets.providers.gcp_provider import GCPSecretsProvider
 from cloud_secrets.providers.azure_provider import AzureSecretsProvider
 from cloud_secrets.providers.local_provider import LocalEnvProvider
+from cloud_secrets.providers.vault_provider import VaultSecretsProvider
 from cloud_secrets.providers.base import BaseSecretProvider
 
 
@@ -20,6 +21,7 @@ class SecretManager:
         "gcp": GCPSecretsProvider,
         "azure": AzureSecretsProvider,
         "local": LocalEnvProvider,
+        "vault": VaultSecretsProvider,
     }
 
     def __init__(self, provider_type: str, **kwargs):
