@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 from azure.core.exceptions import ResourceNotFoundError
 
+from cloud_secrets.providers.base import _is_settings_blob
 from cloud_secrets.providers.azure_provider import (
     AzureSecretsProvider,
-    _is_dotenv_blob,
 )
 from cloud_secrets.providers.aws_provider import AWSSecretsProvider
 from cloud_secrets.common.exceptions import CloudSecretsError, SecretNotFoundError
@@ -49,12 +49,23 @@ class TestAzureReadBack:
         assert json.loads(result)["secret_access_key"] == "abc/def+GHI=jkl"
 
     def test_get_secret_dotenv_blob_exposes_keys(self, azure_provider):
+        """A settings blob is still injected — boot paths depend on it."""
         provider, client = azure_provider
         _stored(client, "APP_NAME=MyApp\nPORT=8080\n")
 
         provider.get_secret("app-config")
 
         env = provider.get_env()
+        assert env.str("APP_NAME") == "MyApp"
+        assert env.int("PORT") == 8080
+
+    def test_load_secret_into_env_exposes_keys(self, azure_provider):
+        """Injection is opt-in, for a service's own settings blob."""
+        provider, client = azure_provider
+        _stored(client, "APP_NAME=MyApp\nPORT=8080\n")
+
+        env = provider.load_secret_into_env("app-config")
+
         assert env.str("APP_NAME") == "MyApp"
         assert env.int("PORT") == 8080
 
@@ -87,19 +98,19 @@ class TestAzureReadBack:
 
 class TestIsDotenvBlob:
     def test_multi_line_assignments_is_blob(self):
-        assert _is_dotenv_blob("A=1\nB=2") is True
+        assert _is_settings_blob("A=1\nB=2") is True
 
     def test_single_assignment_is_not_blob(self):
-        assert _is_dotenv_blob("A=1") is False
+        assert _is_settings_blob("A=1") is False
 
     def test_json_scalar_is_not_blob(self):
-        assert _is_dotenv_blob('{"a": "b", "c": "d"}') is False
+        assert _is_settings_blob('{"a": "b", "c": "d"}') is False
 
     def test_spaces_around_equals_is_not_blob(self):
-        assert _is_dotenv_blob("API_KEY = sk-live-x\nB=2") is False
+        assert _is_settings_blob("API_KEY = sk-live-x\nB=2") is False
 
     def test_indented_line_is_not_blob(self):
-        assert _is_dotenv_blob("A=1\n  DB_PASSWORD=x") is False
+        assert _is_settings_blob("A=1\n  DB_PASSWORD=x") is False
 
 
 class TestAzureNameNormalization:

@@ -51,7 +51,6 @@ class LocalEnvProvider(BaseSecretProvider):
         """Check JSON sidecar first, then fall back to .env."""
         secrets = self._load_secrets_file()
         if secret_name in secrets:
-            self.env.ENVIRON[secret_name] = secrets[secret_name]
             return secrets[secret_name]
         try:
             return self.env(secret_name)

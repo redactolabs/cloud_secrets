@@ -113,7 +113,12 @@ class TestAWSSetDelete:
         assert json.loads(result) == {"csv_connector/abc": {"private_key": "pk123"}}
 
     def test_flat_dict_destructures_env_vars(self, mock_aws_client):
-        """A flat dict secret is destructured into env vars AND the raw JSON is returned."""
+        """AWS settings blobs are JSON, so destructuring is how boot works here.
+
+        Retained deliberately: unlike GCP it produces well-formed KEY=VALUE
+        lines and logs nothing. Removing it requires migrating boot paths to
+        load_secret_into_env first, which is the 2.0 item.
+        """
         import json
         import os
 
@@ -126,11 +131,12 @@ class TestAWSSetDelete:
 
             # Raw JSON is returned
             assert result == original
-            # Individual keys were destructured into env
+            # Individual keys are destructured into env for boot
             assert os.environ.get("DB_HOST") == "localhost"
             assert os.environ.get("DB_PORT") == "5432"
-            # The bundle name also maps to the raw JSON
-            assert os.environ.get("my-bundle") == original
+            # The blob name itself is no longer mapped: that only served to
+            # accumulate raw secrets in the process environment.
+            assert os.environ.get("my-bundle") is None
         finally:
             os.environ.pop("DB_HOST", None)
             os.environ.pop("DB_PORT", None)

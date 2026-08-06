@@ -5,29 +5,11 @@ import re
 from azure.core.exceptions import ResourceNotFoundError
 from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
-from .base import BaseSecretProvider
+from .base import BaseSecretProvider, _is_settings_blob
 from cloud_secrets.common.exceptions import (
     SecretNotFoundError,
     ConfigurationError,
 )
-
-
-_DOTENV_LINE = re.compile(r"\A(?:#|(?:export )?[A-Za-z_0-9]+=)")
-
-
-def _is_dotenv_blob(text: str) -> bool:
-    """Require >=2 assignment lines so a single-line scalar that happens to contain
-    '=' (a connection string, a SAS token) is returned as-is rather than split into
-    the environment under bogus keys."""
-    lines = [line for line in text.splitlines() if line.strip()]
-    if not lines or not all(_DOTENV_LINE.match(line) for line in lines):
-        return False
-    assignments = [
-        line
-        for line in lines
-        if _DOTENV_LINE.match(line) and not line.lstrip().startswith("#")
-    ]
-    return len(assignments) >= 2
 
 
 class AzureSecretsProvider(BaseSecretProvider):
@@ -50,11 +32,12 @@ class AzureSecretsProvider(BaseSecretProvider):
     def _fetch_raw_secret(self, secret_name: str) -> str:
         """Fetch raw secret from Azure Key Vault."""
         try:
-            response = self.client.get_secret(secret_name)
-            value = response.value or ""
-            self.env.ENVIRON[secret_name] = value
-            if _is_dotenv_blob(value):
-                self.env.read_env(io.StringIO(value))
+            value = self.client.get_secret(secret_name).value
+
+            # Same rule as GCP: only a settings blob is injected.
+            if _is_settings_blob(value):
+                self.env.read_env(io.StringIO(value), overwrite=False)
+
             return value
         except ResourceNotFoundError:
             raise SecretNotFoundError(f"Secret {secret_name} not found")

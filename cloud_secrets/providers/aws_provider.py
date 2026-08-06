@@ -1,3 +1,4 @@
+
 import io
 import json
 
@@ -37,10 +38,16 @@ class AWSSecretsProvider(BaseSecretProvider):
                 raise SecretNotFoundError(f"Secret {secret_name} not found")
 
             secret = response["SecretString"]
+
+            # AWS settings blobs are themselves JSON, so JSON-shape cannot
+            # distinguish configuration from a per-tenant secret here and
+            # destructuring is retained for boot compatibility. Unlike GCP it
+            # produces well-formed KEY=VALUE lines, so nothing is logged.
+            # Removing this is the remaining 2.0 item; migrate boot paths to
+            # load_secret_into_env first.
             try:
                 secret_data = json.loads(secret)
                 if isinstance(secret_data, dict):
-                    # Destructure flat dicts into individual env vars
                     content = "\n".join(
                         [f"{key}={val}" for key, val in secret_data.items()]
                     )
@@ -48,8 +55,6 @@ class AWSSecretsProvider(BaseSecretProvider):
             except json.JSONDecodeError:
                 pass
 
-            # Always store and return the raw value
-            self.env.ENVIRON[secret_name] = secret
             return secret
         except ClientError as e:
             if e.response["Error"]["Code"] == "ResourceNotFoundException":

@@ -38,8 +38,21 @@ class SecretManager:
         self.provider: BaseSecretProvider = self.PROVIDERS[provider_type](**kwargs)
 
     def get_secret(self, secret_name: str, **kwargs) -> Any:
-        """Get a secret by name."""
+        """Return a secret's value.
+
+        Read-only: the value is not parsed, not written to ``os.environ``, and
+        not logged. Use this for per-tenant secrets.
+        """
         return self.provider.get_secret(secret_name, **kwargs)
+
+    def load_secret_into_env(self, secret_name: str) -> Env:
+        """Load a dotenv-formatted settings blob into the environment.
+
+        The bootstrap path, for a service loading its own configuration. Never
+        call this with a per-tenant secret: its contents would be parsed as
+        configuration and could overwrite real settings.
+        """
+        return self.provider.load_secret_into_env(secret_name)
 
     def set_secret(self, secret_name: str, secret_value: str) -> None:
         """Create or update a secret."""

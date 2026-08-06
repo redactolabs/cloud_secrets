@@ -1,8 +1,9 @@
 # cloud_secrets/providers/gcp_provider.py
 import io
+
 from google.cloud import secretmanager
 from google.api_core import exceptions
-from .base import BaseSecretProvider
+from .base import BaseSecretProvider, _is_settings_blob
 from cloud_secrets.common.exceptions import (
     SecretNotFoundError,
     ConfigurationError,
@@ -33,11 +34,14 @@ class GCPSecretsProvider(BaseSecretProvider):
             response = self.client.access_secret_version(request={"name": name})
             value = response.payload.data.decode("UTF-8")
 
-            # Track that we've fetched this secret
-            self._fetched_secrets.add(secret_name)
-
-            self.env.read_env(io.StringIO(value), overwrite=True)
-            self.env.ENVIRON[secret_name] = value
+            # Only a settings blob is parsed. Anything else — a JSON
+            # credential bundle, a bare token — went through read_env, which
+            # logs every line it cannot parse and was writing customer
+            # credentials to Cloud Logging field by field. Blobs are still
+            # injected so existing boot paths keep working unchanged; new code
+            # should call load_secret_into_env.
+            if _is_settings_blob(value):
+                self.env.read_env(io.StringIO(value), overwrite=False)
 
             return value
 
