@@ -20,8 +20,7 @@ SERVICE_ACCOUNT_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/toke
 DEFAULT_KV_MOUNT = "secret"
 DEFAULT_AUTH_MOUNT = "kubernetes"
 
-# Vault answers a policy denial with the same 403 as an expired token; a token
-# lives far longer than this, so only the denial is rate-limited.
+# A policy denial and an expired token share a 403, so only the denial is rate-limited.
 RELOGIN_COOLDOWN_SECONDS = 30.0
 
 _RAW_FIELD = "__raw__"
