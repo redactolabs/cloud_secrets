@@ -370,6 +370,23 @@ class TestVaultWrite:
         with pytest.raises(ConfigurationError, match="Failed to delete secret"):
             prov.delete_secret("bundle")
 
+    def test_delete_surfaces_a_login_failure_instead_of_re_redacting_it(
+        self, vault_client, sa_token
+    ):
+        """The write path already does this; delete had the same re-wrap."""
+        _, client = vault_client
+        client.secrets.kv.v2.delete_metadata_and_all_versions.side_effect = Forbidden(
+            "token expired"
+        )
+        prov = build_k8s_provider()
+        client.auth.kubernetes.login.side_effect = RuntimeError("x509: unknown CA")
+
+        with pytest.raises(ConfigurationError) as raised:
+            prov.delete_secret("bundle")
+
+        assert "disco-python-pod" in str(raised.value)
+        assert not str(raised.value).startswith("Failed to delete")
+
     def test_store_failure_does_not_echo_the_exception(self, provider):
         """hvac stringifies a non-JSON error body verbatim, and the KV write's
         body is the secret. A gateway that quotes the request would put the
@@ -650,6 +667,15 @@ class TestConfiguration:
     def test_missing_url_is_rejected(self, vault_client):
         with pytest.raises(ConfigurationError, match="url is required"):
             VaultSecretsProvider(token="t")
+
+    def test_client_construction_failure_is_wrapped(self, vault_client):
+        """__init__ promises ConfigurationError, so a raw hvac error must not
+        escape to the caller."""
+        mock_cls, _ = vault_client
+        mock_cls.side_effect = RuntimeError("bad adapter")
+
+        with pytest.raises(ConfigurationError, match="Failed to initialize"):
+            build_provider()
 
     def test_neither_role_nor_token_is_rejected(self, vault_client):
         """An anonymous client would fail later, at the first read, with a 403."""
