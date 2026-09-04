@@ -1,4 +1,7 @@
 import json
+import threading
+import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import environ
@@ -12,6 +15,7 @@ from cloud_secrets.common.exceptions import (
     SecretNotFoundError,
 )
 from cloud_secrets.providers.vault_provider import (
+    RELOGIN_COOLDOWN_SECONDS,
     SERVICE_ACCOUNT_TOKEN_PATH,
     VaultSecretsProvider,
     _from_fields,
@@ -38,11 +42,19 @@ def vault_client():
 
 @pytest.fixture
 def sa_token():
-    """Kubernetes rotates the projected token, so _login re-reads it every time.
-    The patch has to outlive construction for the re-login tests to work."""
-    with patch(
-        "cloud_secrets.providers.vault_provider.Path.read_text", return_value=SA_JWT
-    ):
+    """Kubernetes rotates the projected token, so _login re-reads it every time
+    and the patch has to outlive construction.
+
+    Path.read_text is a shared class attribute, so this asserts the path instead
+    of answering every read in the process — otherwise an unrelated read during
+    one of these tests would silently get a JWT instead of failing.
+    """
+
+    def read_text(self, *args, **kwargs):
+        assert str(self) == SERVICE_ACCOUNT_TOKEN_PATH
+        return SA_JWT
+
+    with patch.object(Path, "read_text", read_text):
         yield
 
 
@@ -120,6 +132,9 @@ class TestFieldMapping:
             "42",
             "{}",
             "",
+            '{"k": "caf\u00e9"}',
+            '{"caf\u00e9": "v"}',
+            '{"k": "\U0001f600"}',
         ],
         ids=[
             "json-object",
@@ -130,6 +145,9 @@ class TestFieldMapping:
             "json-number",
             "empty-object",
             "empty-string",
+            "non-ascii-value",
+            "non-ascii-key",
+            "astral-plane",
         ],
     )
     def test_every_shape_round_trips(self, source):
@@ -143,6 +161,12 @@ class TestFieldMapping:
             "DB_HOST": "localhost",
             "PORT": "5432",
         }
+
+    def test_a_non_string_reserved_field_is_not_unwrapped(self):
+        """Another writer can store a number there through the HTTP API, and the
+        base class assigns whatever comes back to os.environ, which rejects a
+        non-string with a TypeError."""
+        assert json.loads(_from_fields({"__raw__": 42})) == {"__raw__": 42}
 
     def test_reserved_field_alongside_others_is_not_unwrapped(self):
         fields = {"__raw__": "a", "OTHER": "b"}
@@ -172,7 +196,7 @@ class TestSecretNames:
         the request and any endpoint the token can reach becomes callable."""
         prov, client = provider
 
-        with pytest.raises(CloudSecretsError, match="escapes the configured mount"):
+        with pytest.raises(CloudSecretsError, match="not a path under the mount"):
             prov.get_secret(name)
 
         client.secrets.kv.v2.read_secret_version.assert_not_called()
@@ -194,6 +218,38 @@ class TestSecretNames:
             prov.set_secret("../../auth/token/create", '{"policies": ["root"]}')
 
         client.secrets.kv.v2.create_or_update_secret.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "name",
+        ["a//b", "/leading", "trailing/", ".", "a/./b", "a b", "a%2fb", "a\x00b"],
+        ids=[
+            "empty-segment",
+            "leading-slash",
+            "trailing-slash",
+            "bare-dot",
+            "dot-segment",
+            "space",
+            "percent",
+            "nul",
+        ],
+    )
+    def test_a_name_outside_the_allowlist_is_rejected(self, provider, name):
+        """An empty or dot segment aliases or escapes; everything else is inert
+        only while hvac keeps percent-escaping it, which is not our guarantee."""
+        prov, client = provider
+
+        with pytest.raises(CloudSecretsError):
+            prov.get_secret(name)
+
+        client.secrets.kv.v2.read_secret_version.assert_not_called()
+
+    def test_a_non_string_name_raises_a_library_error(self, provider):
+        """_canonical_name runs before the base class's try, so an AttributeError
+        would escape a library that otherwise only raises CloudSecretsError."""
+        prov, _client = provider
+
+        with pytest.raises(CloudSecretsError, match="must be a string"):
+            prov.get_secret(b"bytes-name")
 
     def test_a_dotted_name_that_does_not_escape_is_allowed(self, provider):
         """Only `..` walks out; a dot inside a segment is an ordinary character."""
@@ -320,6 +376,24 @@ class TestVaultWrite:
             prov.set_secret("bundle", json.dumps({"P": marker}))
 
         assert marker not in str(raised.value)
+        assert "RuntimeError" in str(raised.value)
+        assert "bundle" in str(raised.value)
+        assert raised.value.__suppress_context__
+
+    def test_store_surfaces_a_login_failure_instead_of_re_redacting_it(
+        self, vault_client, sa_token
+    ):
+        """_login already stripped the sensitive text, so wrapping its error
+        again would leave a message naming neither the role nor the cause."""
+        _, client = vault_client
+        client.secrets.kv.v2.create_or_update_secret.side_effect = Forbidden("expired")
+        prov = build_k8s_provider()
+        client.auth.kubernetes.login.side_effect = RuntimeError("x509: unknown CA")
+
+        with pytest.raises(ConfigurationError, match="login for role") as raised:
+            prov.set_secret("bundle", '{"K": "v"}')
+
+        assert "disco-python-pod" in str(raised.value)
 
 
 class TestEditionCompatibility:
@@ -402,6 +476,10 @@ class TestKubernetesAuth:
 
         assert SA_JWT not in str(raised.value)
         assert "RuntimeError" in str(raised.value)
+        assert raised.value.__suppress_context__, (
+            "without `from None` the chained hvac exception still renders in a "
+            "traceback, putting the JWT back into any exc_info log line"
+        )
 
     @pytest.mark.parametrize("denial", [Forbidden, Unauthorized], ids=["403", "401"])
     def test_expired_token_logs_in_again_and_retries(
@@ -423,38 +501,129 @@ class TestKubernetesAuth:
         assert client.auth.kubernetes.login.call_count == 2
         assert client.secrets.kv.v2.read_secret_version.call_count == 2
 
-    def test_a_persistent_denial_logs_in_only_once(self, vault_client, sa_token):
-        """Vault returns 403 for a policy denial too. Re-logging in on every
+    def test_a_persistent_denial_costs_one_login_not_one_per_read(
+        self, vault_client, sa_token
+    ):
+        """Vault returns 403 for a policy denial too. Re-authenticating on every
         denied read would make a narrowed policy a TokenReview storm against the
         Kubernetes API server."""
         _, client = vault_client
         client.secrets.kv.v2.read_secret_version.side_effect = Forbidden("denied")
 
         prov = build_k8s_provider()
-        for _attempt in range(2):
+        for _attempt in range(5):
             with pytest.raises(ConfigurationError):
                 prov.get_secret("bundle")
 
         assert client.auth.kubernetes.login.call_count == 2
-        assert client.secrets.kv.v2.read_secret_version.call_count == 3
 
-    def test_a_success_restores_the_retry(self, vault_client, sa_token):
-        """The latch guards against a storm, not against a pod that lives through
-        several token lifetimes."""
+    def test_a_later_expiry_still_recovers_after_the_cooldown(
+        self, vault_client, sa_token
+    ):
+        """The floor bounds the login rate; it must not cap the pod's lifetime."""
         _, client = vault_client
-        ok = {"data": {"data": {"K": "v"}, "metadata": {}}}
-        client.secrets.kv.v2.read_secret_version.side_effect = [
-            Forbidden("expired"),
-            ok,
-            Forbidden("expired again"),
-            ok,
-        ]
+        client.secrets.kv.v2.read_secret_version.side_effect = Forbidden("denied")
 
-        prov = build_k8s_provider()
-        prov.get_secret("bundle")
-        prov.get_secret("bundle")
+        with patch("cloud_secrets.providers.vault_provider.time.monotonic") as clock:
+            clock.return_value = 1000.0
+            prov = build_k8s_provider()
+            with pytest.raises(ConfigurationError):
+                prov.get_secret("bundle")
+            assert client.auth.kubernetes.login.call_count == 2
+
+            clock.return_value = 1000.0 + RELOGIN_COOLDOWN_SECONDS + 1
+            client.secrets.kv.v2.read_secret_version.side_effect = [
+                Forbidden("expired"),
+                {"data": {"data": {"K": "v"}, "metadata": {}}},
+            ]
+
+            assert json.loads(prov.get_secret("bundle")) == {"K": "v"}
 
         assert client.auth.kubernetes.login.call_count == 3
+
+    def test_a_failed_relogin_does_not_disable_later_ones(self, vault_client, sa_token):
+        """The attempt is recorded before the login runs, so a transient
+        TokenReview outage must not leave the client unable to authenticate for
+        the rest of the process's life."""
+        _, client = vault_client
+        client.secrets.kv.v2.read_secret_version.side_effect = Forbidden("expired")
+        client.auth.kubernetes.login.side_effect = [None, RuntimeError("apiserver 503")]
+
+        with patch("cloud_secrets.providers.vault_provider.time.monotonic") as clock:
+            clock.return_value = 1000.0
+            prov = build_k8s_provider()
+            with pytest.raises(ConfigurationError):
+                prov.get_secret("bundle")
+
+            clock.return_value = 1000.0 + RELOGIN_COOLDOWN_SECONDS + 1
+            client.auth.kubernetes.login.side_effect = None
+            client.secrets.kv.v2.read_secret_version.side_effect = [
+                Forbidden("expired"),
+                {"data": {"data": {"K": "v"}, "metadata": {}}},
+            ]
+
+            assert json.loads(prov.get_secret("bundle")) == {"K": "v"}
+
+    def test_a_failing_relogin_is_rate_limited_too(self, vault_client, sa_token):
+        """A broken auth path — a revoked role, a bad CA bundle — must not become
+        a login per read either. The attempt is recorded before the login runs,
+        so a login that raises still spends the cooldown."""
+        _, client = vault_client
+        client.secrets.kv.v2.read_secret_version.side_effect = Forbidden("expired")
+        prov = build_k8s_provider()
+        client.auth.kubernetes.login.side_effect = RuntimeError("x509: unknown CA")
+        logins_at_start = client.auth.kubernetes.login.call_count
+
+        with patch(
+            "cloud_secrets.providers.vault_provider.time.monotonic",
+            return_value=1000.0,
+        ):
+            for _attempt in range(5):
+                with pytest.raises(ConfigurationError):
+                    prov.get_secret("bundle")
+
+        assert client.auth.kubernetes.login.call_count - logins_at_start == 1
+
+    def test_every_thread_recovers_from_one_shared_expiry(self, vault_client, sa_token):
+        """SecretManager is shared across threads. At a TTL rollover every
+        in-flight call holds the same dead token, so one login has to serve all
+        of them rather than one winning and the rest failing."""
+        _, client = vault_client
+        live = threading.Event()
+        ok = {"data": {"data": {"K": "v"}, "metadata": {}}}
+
+        def read(**kwargs):
+            if live.is_set():
+                return ok
+            raise Forbidden("token expired")
+
+        def login(**kwargs):
+            time.sleep(0.05)
+            live.set()
+
+        client.secrets.kv.v2.read_secret_version.side_effect = read
+        prov = build_k8s_provider()
+        client.auth.kubernetes.login.side_effect = login
+        logins_at_start = client.auth.kubernetes.login.call_count
+
+        results: list[str] = []
+        errors: list[Exception] = []
+
+        def call():
+            try:
+                results.append(prov.get_secret("bundle"))
+            except Exception as e:  # noqa: BLE001 - recorded, then asserted on
+                errors.append(e)
+
+        threads = [threading.Thread(target=call) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        assert len(results) == 8
+        assert client.auth.kubernetes.login.call_count - logins_at_start == 1
 
     def test_a_static_token_is_not_retried(self, provider):
         """A static token cannot be renewed, so retrying only doubles the latency."""
