@@ -1,9 +1,9 @@
 """Base provider implementation."""
 
-import environ
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Mapping, Pattern
+from typing import Any, Dict, List, Mapping, Optional, Pattern
 
+import environ
 from environ import Env
 
 from cloud_secrets.common.exceptions import CloudSecretsError, SecretNotFoundError

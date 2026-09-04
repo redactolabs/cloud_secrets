@@ -64,27 +64,27 @@ def provider(vault_client):
     yield VaultSecretsProvider(url=VAULT_URL, token="static-token"), client
 
 
-def build_provider(**kwargs):
+def build_provider(**kwargs: object) -> VaultSecretsProvider:
     kwargs.setdefault("url", VAULT_URL)
     kwargs.setdefault("token", "static-token")
     return VaultSecretsProvider(**kwargs)
 
 
-def build_k8s_provider(**kwargs):
+def build_k8s_provider(**kwargs: object) -> VaultSecretsProvider:
     """A provider authenticated by role, so the re-login path is live. Needs the
     sa_token fixture: _login reads the token again on every re-login, not only at
     construction."""
     return VaultSecretsProvider(url=VAULT_URL, role="disco-python-pod", **kwargs)
 
 
-def stored(client, fields):
+def stored(client: MagicMock, fields: dict[str, object]):
     """Make the KV v2 read return `fields`, in Vault's nested response shape."""
     client.secrets.kv.v2.read_secret_version.return_value = {
         "data": {"data": fields, "metadata": {"version": 1}}
     }
 
 
-def written_fields(client):
+def written_fields(client: MagicMock) -> dict[str, object]:
     return client.secrets.kv.v2.create_or_update_secret.call_args.kwargs["secret"]
 
 
@@ -343,13 +343,23 @@ class TestVaultWrite:
             path="bundle", mount_point="secret"
         )
 
-    def test_delete_of_a_missing_secret_is_a_noop(self, provider):
-        prov, client = provider
+    def test_delete_surfaces_a_bad_mount_rather_than_reporting_success(
+        self, vault_client
+    ):
+        """hvac documents this endpoint as 204-only, so a 404 is the mount, not a
+        missing secret -- and the call destroys every version. Swallowing it told
+        an erasure job that deletions succeeded while nothing was removed."""
+        _, client = vault_client
         client.secrets.kv.v2.delete_metadata_and_all_versions.side_effect = InvalidPath(
-            "nope"
+            "no handler for route"
         )
+        prov = build_provider(mount_point="kv-typo")
 
-        prov.delete_secret("absent")
+        with pytest.raises(ConfigurationError) as raised:
+            prov.delete_secret("prod-db")
+
+        assert "kv-typo" in str(raised.value)
+        assert "prod-db" in str(raised.value)
 
     def test_delete_failure_is_wrapped(self, provider):
         prov, client = provider

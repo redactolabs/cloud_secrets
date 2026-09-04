@@ -3,14 +3,15 @@ import io
 import re
 
 from azure.core.exceptions import ResourceNotFoundError
-from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
-from .base import BaseSecretProvider
+from azure.keyvault.secrets import SecretClient
+
 from cloud_secrets.common.exceptions import (
-    SecretNotFoundError,
     ConfigurationError,
+    SecretNotFoundError,
 )
 
+from .base import BaseSecretProvider
 
 _DOTENV_LINE = re.compile(r"\A(?:#|(?:export )?[A-Za-z_0-9]+=)")
 

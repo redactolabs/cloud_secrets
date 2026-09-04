@@ -6,11 +6,11 @@ from environ import Env
 
 from cloud_secrets.common.exceptions import ConfigurationError
 from cloud_secrets.providers.aws_provider import AWSSecretsProvider
-from cloud_secrets.providers.gcp_provider import GCPSecretsProvider
 from cloud_secrets.providers.azure_provider import AzureSecretsProvider
+from cloud_secrets.providers.base import BaseSecretProvider
+from cloud_secrets.providers.gcp_provider import GCPSecretsProvider
 from cloud_secrets.providers.local_provider import LocalEnvProvider
 from cloud_secrets.providers.vault_provider import VaultSecretsProvider
-from cloud_secrets.providers.base import BaseSecretProvider
 
 
 class SecretManager:

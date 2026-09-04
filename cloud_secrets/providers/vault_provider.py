@@ -20,15 +20,9 @@ SERVICE_ACCOUNT_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/toke
 DEFAULT_KV_MOUNT = "secret"
 DEFAULT_AUTH_MOUNT = "kubernetes"
 
+# Vault answers a policy denial with the same 403 as an expired token; a token
+# lives far longer than this, so only the denial is rate-limited.
 RELOGIN_COOLDOWN_SECONDS = 30.0
-"""Floor between two Kubernetes logins on one client.
-
-A token lives orders of magnitude longer than this, so a pod whose token expires
-re-authenticates on its very next call. What the floor bounds is the other case:
-Vault answers a policy denial with the same 403 as an expired token, so without
-it a pod polling a denied path once a second costs Vault sixty logins a minute --
-and each one costs a TokenReview against the Kubernetes API server.
-"""
 
 _RAW_FIELD = "__raw__"
 
@@ -36,13 +30,9 @@ _SEGMENT = re.compile(r"[A-Za-z0-9._~-]+")
 
 
 def _to_fields(secret_value: str) -> dict[str, Any]:
-    """Map the library's string value onto the field map KV v2 stores.
-
-    A JSON object becomes one Vault field per key, so `vault kv get` renders it
-    readably and an operator can set a single key. Anything else — including an
-    object that itself uses the reserved key, which would otherwise collide with
-    a wrapped string — round-trips whole through that one field.
-    """
+    """A JSON object spreads across Vault fields; anything else round-trips whole
+    through the reserved field. An object already using that key is not spread --
+    it would be indistinguishable from a wrapped string."""
     try:
         parsed = json.loads(secret_value)
     except ValueError:
@@ -53,12 +43,8 @@ def _to_fields(secret_value: str) -> dict[str, Any]:
 
 
 def _from_fields(fields: dict[str, Any]) -> str:
-    """Recover an equivalent JSON document, not the source text.
-
-    A lone reserved field holding a string is that string. Every other field map
-    is re-encoded, so key order survives but the original spacing does not, and a
-    field another writer stored as a number stays a number.
-    """
+    """Recovers an equivalent JSON document, not the source text: spacing is lost
+    and a field another writer stored as a number stays a number."""
     if list(fields) == [_RAW_FIELD] and isinstance(fields[_RAW_FIELD], str):
         return fields[_RAW_FIELD]
     return json.dumps(fields, ensure_ascii=False)
@@ -67,20 +53,12 @@ def _from_fields(fields: dict[str, Any]) -> str:
 class VaultSecretsProvider(BaseSecretProvider):
     """HashiCorp Vault and OpenBao KV v2 provider.
 
-    Authenticates with the Kubernetes auth method when `role` is given, otherwise
-    with a token — `token`, else hvac's own `VAULT_TOKEN` lookup. Leaving both
-    unset is a configuration error rather than an anonymous client.
+    Neither `role` nor a token is a configuration error, not an anonymous client.
 
-    Accepts `namespace` for the editions that partition (Vault Enterprise, HCP
-    Dedicated, whose top-level namespace is `admin`) and omits the header
-    entirely when it is unset, which is what a Community cluster requires.
-    `verify` takes a CA bundle path for a cluster behind a private CA.
-
-    Unlike the cloud providers this never spreads a fetched secret's keys into
-    the process environment. The raw value is still placed under the secret's own
-    name because `BaseSecretProvider.get_secret` reads it back from there, and
-    `environ.Env.ENVIRON` is `os.environ` — so a caller that needs the value out
-    of the environment must pop that one key itself.
+    A fetched secret's keys are never spread into the environment, but the raw
+    value is still written under the secret's own name because the base class
+    reads it back from there, and `environ.Env.ENVIRON` is `os.environ` -- a
+    caller needing it out of the environment must pop that key itself.
     """
 
     def __init__(self, **kwargs):
@@ -111,15 +89,11 @@ class VaultSecretsProvider(BaseSecretProvider):
         self._login()
 
     def _canonical_name(self, secret_name: str) -> str:
-        """Nothing is rewritten -- a Vault path keeps `/`, `_` and `-`. What is
-        rejected is anything but slash-joined runs of unreserved characters.
+        """Accepts only slash-joined runs of unreserved characters.
 
-        A `.` or `..` segment escapes the mount, because requests strips dot
-        segments client-side before the request leaves the process: measured,
-        `../../auth/token/lookup-self` reaches `/v1/auth/token/lookup-self`. An
-        empty segment aliases two names onto one secret. Every other character is
-        inert only while hvac keeps percent-escaping it, which is a guarantee of
-        its internals rather than of ours, so the allowlist stands on its own.
+        requests strips dot segments client-side, so a `..` would send
+        `{mount}/data/../../auth/token/lookup-self` to `/v1/auth/token/...`. An
+        empty segment aliases two names onto one secret.
         """
         if not isinstance(secret_name, str):
             raise CloudSecretsError(
@@ -133,12 +107,9 @@ class VaultSecretsProvider(BaseSecretProvider):
             )
         return secret_name
 
-    def _login(self) -> None:
-        """Exchange the pod's service account token for a Vault token.
-
-        Reads the service account token from disk on every call: Kubernetes
-        rotates it, so a cached copy expires with the projected volume.
-        """
+    def _login(self):
+        """Re-reads the service account token from disk every time: Kubernetes
+        rotates it, so a cached copy expires with the projected volume."""
         if not self._role:
             if not self.client.token:
                 raise ConfigurationError(
@@ -165,17 +136,11 @@ class VaultSecretsProvider(BaseSecretProvider):
             ) from None
 
     def _reauthenticate(self, seen_generation: int) -> bool:
-        """Refresh the Vault token, and report whether the caller should retry.
-
-        Retries without logging in when another caller has already refreshed
-        since the failed call started -- at a TTL rollover every in-flight
-        request is holding the same dead token, and only one of them needs to pay
-        for a new one. Declines when a login was attempted inside
-        RELOGIN_COOLDOWN_SECONDS, which is what keeps a denied path from becoming
-        a login per read. The attempt is recorded before the login runs, so a
-        login that fails is subject to the same floor and a transient failure
-        cannot leave the client unable to authenticate again.
-        """
+        """Whether the caller should retry. True without logging in when another
+        caller already refreshed since the failed call began, so one login serves
+        every request in flight at a rollover. The attempt is recorded before the
+        login runs, so a failing auth path cannot escape the floor or strand the
+        client."""
         with self._auth_lock:
             if self._auth_generation != seen_generation:
                 return True
@@ -188,15 +153,8 @@ class VaultSecretsProvider(BaseSecretProvider):
             return True
 
     def _with_relogin(self, action: Callable[[], Any]) -> Any:
-        """Run a Vault call, refreshing an expired token once and retrying.
-
-        A Kubernetes-auth token has its own TTL and outlives neither the pod nor
-        that TTL, so a client held for the life of a process has to be able to
-        authenticate again. Vault answers a policy denial with the same 403, and
-        the two are told apart by outcome rather than by inspection: a refresh is
-        rate-limited, so a denial that survives it costs one login rather than
-        one per read. A static token cannot be renewed, so it never retries.
-        """
+        """Refreshes an expired token once and retries. A static token cannot be
+        renewed, so it never retries."""
         generation = self._auth_generation
         try:
             return action()
@@ -206,9 +164,8 @@ class VaultSecretsProvider(BaseSecretProvider):
         return action()
 
     def _fetch_raw_secret(self, secret_name: str) -> str:
-        """Raises SecretNotFoundError when the path holds no secret. Vault answers
-        a mount that does not exist with the same 404, so the message names the
-        mount too."""
+        """Raises SecretNotFoundError when the path holds no secret. A missing
+        mount answers with the same 404, so the message names it too."""
 
         def read():
             return self.client.secrets.kv.v2.read_secret_version(
@@ -257,11 +214,10 @@ class VaultSecretsProvider(BaseSecretProvider):
 
         try:
             self._with_relogin(destroy)
-        except InvalidPath:
-            pass
         except CloudSecretsError:
             raise
         except Exception as e:
             raise ConfigurationError(
-                f"Failed to delete secret '{secret_name}': {e}"
+                f"Failed to delete secret '{secret_name}' under mount "
+                f"'{self.mount_point}': {e}"
             ) from e

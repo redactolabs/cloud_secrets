@@ -1,7 +1,7 @@
 import pytest
 
-from cloud_secrets.providers.local_provider import LocalEnvProvider
 from cloud_secrets.common.exceptions import SecretNotFoundError
+from cloud_secrets.providers.local_provider import LocalEnvProvider
 
 
 class TestLocalProviderFallback:
