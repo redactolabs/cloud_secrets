@@ -720,7 +720,7 @@ class TestRedirects:
                     ).encode()
                 )
 
-            do_GET = do_POST = do_PUT = _handle
+            do_GET = do_POST = do_PUT = do_DELETE = _handle
 
             def log_message(self, *args):
                 pass
@@ -736,7 +736,7 @@ class TestRedirects:
                 )
                 self.end_headers()
 
-            do_GET = do_POST = do_PUT = _handle
+            do_GET = do_POST = do_PUT = do_DELETE = _handle
 
             def log_message(self, *args):
                 pass
@@ -756,6 +756,29 @@ class TestRedirects:
             )
             with pytest.raises(Exception):
                 manager.get_secret("bundle")
+        finally:
+            origin.shutdown()
+            target.shutdown()
+
+        assert received == [], f"the redirect target was called: {received}"
+
+    def test_failure_a_redirected_write_is_not_reported_as_success(self):
+        """hvac parses JSON only on a 200 and raises only above 400, so a redirect
+        it was told not to follow reads as success and a write silently stores
+        nothing."""
+        origin, target, received = self._servers()
+        try:
+            manager = SecretManager(
+                provider_type="vault",
+                url=f"http://127.0.0.1:{origin.server_address[1]}",
+                token="s.tok",
+            )
+            for call in (
+                lambda: manager.set_secret("bundle", '{"K": "v"}'),
+                lambda: manager.delete_secret("bundle"),
+            ):
+                with pytest.raises(ConfigurationError, match="redirected"):
+                    call()
         finally:
             origin.shutdown()
             target.shutdown()

@@ -41,6 +41,19 @@ def _to_fields(secret_value: str) -> dict[str, Any]:
     return {_RAW_FIELD: secret_value}
 
 
+def _reject_redirect(result: Any) -> Any:
+    """hvac parses JSON only on a 200 and raises only above 400, so a redirect it
+    was told not to follow comes back as a plain Response that reads as success --
+    a write would report having stored a secret it never sent."""
+    status = getattr(result, "status_code", None)
+    if isinstance(status, int) and 300 <= status < 400:
+        raise ConfigurationError(
+            f"vault redirected the request ({status}); redirects are not followed, "
+            "point at the active node or a load balancer"
+        )
+    return result
+
+
 def _from_fields(fields: dict[str, Any]) -> str:
     """Recovers an equivalent JSON document, not the source text: spacing is lost
     and a field another writer stored as a number stays a number."""
@@ -160,7 +173,7 @@ class VaultSecretsProvider(BaseSecretProvider):
         renewed, so it never retries."""
         generation = self._auth_generation
         try:
-            return action()
+            return _reject_redirect(action())
         except (Forbidden, Unauthorized):
             if not self._role or not self._reauthenticate(generation):
                 raise
