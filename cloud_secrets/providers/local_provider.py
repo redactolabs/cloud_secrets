@@ -3,8 +3,9 @@ import logging
 import os
 from pathlib import Path
 
-from .base import BaseSecretProvider
 from cloud_secrets.common.exceptions import ConfigurationError, SecretNotFoundError
+
+from .base import BaseSecretProvider
 
 logger = logging.getLogger(__name__)
 

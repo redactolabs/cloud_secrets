@@ -3,8 +3,8 @@ import pytest
 from cloud_secrets import SecretManager
 from cloud_secrets.common.exceptions import ConfigurationError
 from cloud_secrets.providers.aws_provider import AWSSecretsProvider
-from cloud_secrets.providers.gcp_provider import GCPSecretsProvider
 from cloud_secrets.providers.azure_provider import AzureSecretsProvider
+from cloud_secrets.providers.gcp_provider import GCPSecretsProvider
 from cloud_secrets.providers.local_provider import LocalEnvProvider
 
 

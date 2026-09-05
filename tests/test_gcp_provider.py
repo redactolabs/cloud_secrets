@@ -1,5 +1,7 @@
 import os
+
 import pytest
+
 from cloud_secrets.secret_manager import SecretManager
 
 

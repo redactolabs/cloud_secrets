@@ -1,12 +1,15 @@
 # cloud_secrets/providers/gcp_provider.py
 import io
-from google.cloud import secretmanager
+
 from google.api_core import exceptions
-from .base import BaseSecretProvider
+from google.cloud import secretmanager
+
 from cloud_secrets.common.exceptions import (
-    SecretNotFoundError,
     ConfigurationError,
+    SecretNotFoundError,
 )
+
+from .base import BaseSecretProvider
 
 
 class GCPSecretsProvider(BaseSecretProvider):

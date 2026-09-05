@@ -1,18 +1,17 @@
 import json
 import os
+from unittest.mock import MagicMock, patch
 
 import environ
 import pytest
-from unittest.mock import MagicMock, patch
-
 from azure.core.exceptions import ResourceNotFoundError
 
+from cloud_secrets.common.exceptions import CloudSecretsError, SecretNotFoundError
+from cloud_secrets.providers.aws_provider import AWSSecretsProvider
 from cloud_secrets.providers.azure_provider import (
     AzureSecretsProvider,
     _is_dotenv_blob,
 )
-from cloud_secrets.providers.aws_provider import AWSSecretsProvider
-from cloud_secrets.common.exceptions import CloudSecretsError, SecretNotFoundError
 
 
 @pytest.fixture
