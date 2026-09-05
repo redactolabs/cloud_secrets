@@ -28,40 +28,6 @@ _RAW_FIELD = "__raw__"
 _SEGMENT = re.compile(r"[A-Za-z0-9._~-]+")
 
 
-def _to_fields(secret_value: str) -> dict[str, Any]:
-    """A JSON object spreads across Vault fields; anything else round-trips whole
-    through the reserved field. An object already using that key is not spread --
-    it would be indistinguishable from a wrapped string."""
-    try:
-        parsed = json.loads(secret_value)
-    except ValueError:
-        return {_RAW_FIELD: secret_value}
-    if isinstance(parsed, dict) and _RAW_FIELD not in parsed:
-        return parsed
-    return {_RAW_FIELD: secret_value}
-
-
-def _reject_redirect(result: Any) -> Any:
-    """hvac parses JSON only on a 200 and raises only above 400, so a redirect it
-    was told not to follow comes back as a plain Response that reads as success --
-    a write would report having stored a secret it never sent."""
-    status = getattr(result, "status_code", None)
-    if isinstance(status, int) and 300 <= status < 400:
-        raise ConfigurationError(
-            f"vault redirected the request ({status}); redirects are not followed, "
-            "point at the active node or a load balancer"
-        )
-    return result
-
-
-def _from_fields(fields: dict[str, Any]) -> str:
-    """Recovers an equivalent JSON document, not the source text: spacing is lost
-    and a field another writer stored as a number stays a number."""
-    if list(fields) == [_RAW_FIELD] and isinstance(fields[_RAW_FIELD], str):
-        return fields[_RAW_FIELD]
-    return json.dumps(fields, ensure_ascii=False)
-
-
 class VaultSecretsProvider(BaseSecretProvider):
     """HashiCorp Vault and OpenBao KV v2 provider.
 
@@ -237,3 +203,37 @@ class VaultSecretsProvider(BaseSecretProvider):
                 f"Failed to delete secret '{secret_name}' under mount "
                 f"'{self.mount_point}': {e}"
             ) from e
+
+
+def _to_fields(secret_value: str) -> dict[str, Any]:
+    """A JSON object spreads across Vault fields; anything else round-trips whole
+    through the reserved field. An object already using that key is not spread --
+    it would be indistinguishable from a wrapped string."""
+    try:
+        parsed = json.loads(secret_value)
+    except ValueError:
+        return {_RAW_FIELD: secret_value}
+    if isinstance(parsed, dict) and _RAW_FIELD not in parsed:
+        return parsed
+    return {_RAW_FIELD: secret_value}
+
+
+def _from_fields(fields: dict[str, Any]) -> str:
+    """Recovers an equivalent JSON document, not the source text: spacing is lost
+    and a field another writer stored as a number stays a number."""
+    if list(fields) == [_RAW_FIELD] and isinstance(fields[_RAW_FIELD], str):
+        return fields[_RAW_FIELD]
+    return json.dumps(fields, ensure_ascii=False)
+
+
+def _reject_redirect(result: Any) -> Any:
+    """hvac parses JSON only on a 200 and raises only above 400, so a redirect it
+    was told not to follow comes back as a plain Response that reads as success --
+    a write would report having stored a secret it never sent."""
+    status = getattr(result, "status_code", None)
+    if isinstance(status, int) and 300 <= status < 400:
+        raise ConfigurationError(
+            f"vault redirected the request ({status}); redirects are not followed, "
+            "point at the active node or a load balancer"
+        )
+    return result
