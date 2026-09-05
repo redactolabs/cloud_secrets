@@ -689,3 +689,96 @@ class TestConfiguration:
         manager = SecretManager(provider_type="vault", url=VAULT_URL, token="t")
 
         assert isinstance(manager.provider, VaultSecretsProvider)
+
+
+class TestRedirects:
+    """requests forwards X-Vault-Token to the new host and replays the login body
+    on a 307, so a standby redirect would hand another host the credentials."""
+
+    @staticmethod
+    def _servers():
+        import http.server
+        import socketserver
+        import threading
+
+        received: list[tuple[str, str | None, str]] = []
+
+        class Target(http.server.BaseHTTPRequestHandler):
+            def _handle(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(length).decode() if length else ""
+                received.append((self.path, self.headers.get("X-Vault-Token"), body))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "auth": {"client_token": "attacker"},
+                            "data": {"data": {"K": "v"}},
+                        }
+                    ).encode()
+                )
+
+            do_GET = do_POST = do_PUT = _handle
+
+            def log_message(self, *args):
+                pass
+
+        target = socketserver.TCPServer(("127.0.0.1", 0), Target)
+
+        class Origin(http.server.BaseHTTPRequestHandler):
+            def _handle(self):
+                self.send_response(307)
+                self.send_header(
+                    "Location",
+                    f"http://127.0.0.1:{target.server_address[1]}{self.path}",
+                )
+                self.end_headers()
+
+            do_GET = do_POST = do_PUT = _handle
+
+            def log_message(self, *args):
+                pass
+
+        origin = socketserver.TCPServer(("127.0.0.1", 0), Origin)
+        for srv in (target, origin):
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return origin, target, received
+
+    def test_success_a_read_never_forwards_the_token_to_a_redirect(self):
+        origin, target, received = self._servers()
+        try:
+            manager = SecretManager(
+                provider_type="vault",
+                url=f"http://127.0.0.1:{origin.server_address[1]}",
+                token="s.super-secret-token",
+            )
+            with pytest.raises(Exception):
+                manager.get_secret("bundle")
+        finally:
+            origin.shutdown()
+            target.shutdown()
+
+        assert received == [], f"the redirect target was called: {received}"
+
+    def test_success_a_login_never_replays_the_service_account_token(self):
+        origin, target, received = self._servers()
+        try:
+            with patch(
+                "cloud_secrets.providers.vault_provider.Path.read_text",
+                return_value=SA_JWT,
+            ):
+                with pytest.raises(ConfigurationError):
+                    SecretManager(
+                        provider_type="vault",
+                        url=f"http://127.0.0.1:{origin.server_address[1]}",
+                        role="disco-python-pod",
+                    )
+        finally:
+            origin.shutdown()
+            target.shutdown()
+
+        for _path, _token, body in received:
+            assert SA_JWT not in body, "the redirect target received the JWT"
+        assert received == [], f"the redirect target was called: {received}"

@@ -81,6 +81,10 @@ class VaultSecretsProvider(BaseSecretProvider):
                 token=kwargs.get("token"),
                 namespace=kwargs.get("namespace"),
                 verify=kwargs.get("verify"),
+                # requests forwards X-Vault-Token to the new host and replays the
+                # login body on a 307, so a standby redirect would hand another
+                # host the pod's credentials.
+                allow_redirects=False,
             )
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize Vault client: {e}")
